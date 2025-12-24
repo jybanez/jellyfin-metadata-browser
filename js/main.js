@@ -2,7 +2,12 @@ import { state } from "./state.js";
 import { loginIfNeeded, ensureUserId, getViews } from "./api.js";
 import { parseHash, installRouteSaver } from "./router.js";
 import { renderHome, renderView, renderItem } from "./views.js";
-import { saveCurrentViewState } from "./storage.js";
+import { saveCurrentViewState, clearViewState } from "./storage.js";
+import { markImageLoaded } from "./imageCache.js";
+
+
+window.__jmMarkImageLoaded = markImageLoaded;
+
 
 const elNav = document.getElementById("nav");
 const elApp = document.getElementById("app");
@@ -46,17 +51,29 @@ function installSearch() {
     const r = parseHash();
     if (r.page !== "view" || !r.viewId) return;
 
-    const term = elQ.value.trim();
+    const term = elQ.value; // keep raw value, don't trim while typing
     clearTimeout(searchDebounce);
-    searchDebounce = setTimeout(async () => {
-      if (state.viewPaging.searchTerm === term) return;
-      state.viewPaging.searchTerm = term;
 
-      await renderView({ viewId: r.viewId, elApp, elNav, elQ, setLoadIndicator });
+    searchDebounce = setTimeout(async () => {
+      const normalized = term.trim();
+
+      // If nothing changed, do nothing
+      if (state.viewPaging.searchTerm === normalized) return;
+
+      // Save current state (optional), then force a fresh load for this view
       saveCurrentViewState();
-    }, 300);
+      clearViewState(r.viewId);
+
+      // Set desired term and re-render view (this will fetch from server)
+      state.viewPaging.searchTerm = normalized;
+      await renderView({ viewId: r.viewId, elApp, elNav, elQ, setLoadIndicator });
+
+      // Persist the new searched state
+      saveCurrentViewState();
+    }, 350);
   });
 }
+
 
 async function bootstrap() {
   setStatus("Connecting…");

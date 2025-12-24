@@ -3,6 +3,7 @@ import { state } from "./state.js";
 import { fetchItemsByIds } from "./api.js";
 
 function ssKey(viewId){ return SS_PREFIX + viewId; }
+
 function ssWrite(viewId, obj){
   try { sessionStorage.setItem(ssKey(viewId), JSON.stringify(obj)); }
   catch (e) {
@@ -15,11 +16,14 @@ function ssWrite(viewId, obj){
     } catch (_) {}
   }
 }
+
 function ssRead(viewId){
   try {
     const raw = sessionStorage.getItem(ssKey(viewId));
     return raw ? JSON.parse(raw) : null;
-  } catch { return null; }
+  } catch {
+    return null;
+  }
 }
 
 function extractPrimaryBlurHash(it){
@@ -28,6 +32,7 @@ function extractPrimaryBlurHash(it){
   const ks = Object.keys(m);
   return ks.length ? (m[ks[0]] || null) : null;
 }
+
 function compactItemForList(it){
   return {
     Id: it.Id,
@@ -43,7 +48,7 @@ export function saveCurrentViewState() {
   const viewId = state.activeViewId || "";
   if (!viewId) return;
 
-  // in-memory full
+  // 1) Full in-memory cache (fastest restore)
   state.viewStateCache.set(viewId, {
     kind: "memory",
     viewId,
@@ -55,6 +60,7 @@ export function saveCurrentViewState() {
     items: [...(state.viewPaging.items || [])],
   });
 
+  // 2) sessionStorage cache (compact/ids fallback)
   const ids = (state.viewPaging.items || []).map(x => x.Id);
 
   let payload = {
@@ -89,7 +95,28 @@ export function saveCurrentViewState() {
   ssWrite(viewId, payload);
 }
 
-export async function restoreViewState(viewId, { buildViewShell, renderViewGrid, reattachSentinel, setLoadIndicator }){
+/**
+ * Restores state AND rebuilds the View DOM so the content actually changes.
+ *
+ * Important: this version does NOT assume renderViewGrid(replaceAll).
+ * It calls renderViewGrid() and expects views.js to render based on state.activeViewName.
+ */
+export async function restoreViewState(
+  viewId,
+  { buildViewShell, renderViewGrid, reattachSentinel, setLoadIndicator }
+){
+  const indicator = typeof setLoadIndicator === "function" ? setLoadIndicator : () => {};
+
+  // Helper to rebuild view UI after restoring paging state
+  const rebuild = () => {
+    buildViewShell();
+    // Some implementations of renderViewGrid use activeViewName; pass it if accepted.
+    try { renderViewGrid(state.activeViewName); }
+    catch { renderViewGrid(); }
+    reattachSentinel(viewId);
+  };
+
+  // --- 1) In-memory restore (FAST) ---
   const mem = state.viewStateCache.get(viewId);
   if (mem?.kind === "memory") {
     state.viewPaging.items = [...(mem.items || [])];
@@ -98,9 +125,12 @@ export async function restoreViewState(viewId, { buildViewShell, renderViewGrid,
     state.viewPaging.done = !!mem.done;
     state.viewPaging.loading = false;
     state.viewPaging.searchTerm = mem.searchTerm || "";
+
+    rebuild();
     return { ok:true, kind:"memory", scrollY: mem.scrollY || 0 };
   }
 
+  // --- 2) sessionStorage restore ---
   const ss = ssRead(viewId);
   if (!ss) return { ok:false };
 
@@ -110,33 +140,30 @@ export async function restoreViewState(viewId, { buildViewShell, renderViewGrid,
   state.viewPaging.total = ss.total || 0;
   state.viewPaging.done = !!ss.done;
 
-  buildViewShell();
-
   if (ss.kind === "compact") {
     state.viewPaging.items = ss.items || [];
-    renderViewGrid(true);
-    reattachSentinel(viewId);
+    rebuild();
     return { ok:true, kind:"compact", scrollY: ss.scrollY || 0 };
   }
 
   if (ss.kind === "ids") {
     state.viewPaging.items = [];
-    renderViewGrid(true);
-    reattachSentinel(viewId);
+    rebuild();
 
     const ids = ss.ids || [];
     const BATCH = 200;
 
-    setLoadIndicator(true, "Restoring list…");
+    indicator(true, "Restoring list…");
     try {
       for (let i = 0; i < ids.length; i += BATCH) {
         const chunk = ids.slice(i, i + BATCH);
         const hydrated = await fetchItemsByIds(chunk);
         state.viewPaging.items.push(...hydrated);
-        renderViewGrid(true);
+        try { renderViewGrid(state.activeViewName); }
+        catch { renderViewGrid(); }
       }
     } finally {
-      setLoadIndicator(false);
+      indicator(false);
     }
 
     return { ok:true, kind:"ids", scrollY: ss.scrollY || 0 };
@@ -154,4 +181,10 @@ export function updateScrollInStorage(viewId, y){
     ss.scrollY = y;
     ssWrite(viewId, ss);
   }
+}
+
+export function clearViewState(viewId) {
+  if (!viewId) return;
+  try { state.viewStateCache.delete(viewId); } catch {}
+  try { sessionStorage.removeItem(SS_PREFIX + viewId); } catch {}
 }

@@ -7,6 +7,20 @@ import {
   getBoxSetChildren, getSeriesSeasons, getSeasonEpisodes
 } from "./api.js";
 import { saveCurrentViewState, restoreViewState } from "./storage.js";
+import { setBreadcrumbs, clearBreadcrumbs } from "./breadcrumbs.js";
+
+function hasPrimary(item) {
+  return !!(item?.ImageTags && item.ImageTags.Primary);
+}
+function hasBackdrop(item) {
+  return Array.isArray(item?.BackdropImageTags) && item.BackdropImageTags.length > 0;
+}
+
+function getRouteParams() {
+  const h = location.hash.replace(/^#/,"");
+  const qs = h.includes("?") ? h.split("?")[1] : "";
+  return new URLSearchParams(qs);
+}
 
 export function buildViewShell(elApp) {
   elApp.innerHTML = `
@@ -89,7 +103,7 @@ function cardHtml(it) {
   `;
 }
 
-export function renderViewGrid(activeViewName) {
+export function renderViewGrid(activeViewName, replaceAll = false) {
   const grid = document.getElementById("grid");
   const header = document.getElementById("viewHeader");
   const loadingMore = document.getElementById("loadingMore");
@@ -102,11 +116,15 @@ export function renderViewGrid(activeViewName) {
     (state.viewPaging.total ? ` / ${state.viewPaging.total}` : "") +
     (state.viewPaging.searchTerm ? ` • Search: "${state.viewPaging.searchTerm}"` : "");
 
-  const prevCount = grid.children.length;
-  if (prevCount === 0) grid.innerHTML = items.map(cardHtml).join("");
-  else {
-    const newItems = items.slice(prevCount);
-    grid.insertAdjacentHTML("beforeend", newItems.map(cardHtml).join(""));
+  if (replaceAll) {
+    grid.innerHTML = items.map(cardHtml).join("");
+  } else {
+    const prevCount = grid.children.length;
+    if (prevCount === 0) grid.innerHTML = items.map(cardHtml).join("");
+    else {
+      const newItems = items.slice(prevCount);
+      grid.insertAdjacentHTML("beforeend", newItems.map(cardHtml).join(""));
+    }
   }
 
   if (state.viewPaging.loading) loadingMore.textContent = "Loading more…";
@@ -127,7 +145,7 @@ export function ensureSentinel(viewId, setLoadIndicator) {
     if (!hit) return;
 
     await loadNextPage(viewId, indicator, false);
-    renderViewGrid(state.activeViewName);
+    renderViewGrid(state.activeViewName, false);
     saveCurrentViewState();
   }, { root: null, threshold: 0.1 });
 
@@ -156,10 +174,9 @@ export async function renderView({ viewId, elApp, elNav, elQ, setLoadIndicator }
     a.classList.toggle("active", a.getAttribute("href") === `#/view/${viewId}`)
   );
 
-  // Try restore
   const restored = await restoreViewState(viewId, {
     buildViewShell: () => buildViewShell(elApp),
-    renderViewGrid: () => renderViewGrid(state.activeViewName),
+    renderViewGrid: () => renderViewGrid(state.activeViewName, true),
     reattachSentinel: (id) => reattachSentinel(id, indicator),
     setLoadIndicator: indicator
   });
@@ -169,14 +186,15 @@ export async function renderView({ viewId, elApp, elNav, elQ, setLoadIndicator }
     requestAnimationFrame(() => window.scrollTo(0, restored.scrollY || 0));
     return;
   }
-
-  // Normal load
+  setBreadcrumbs(
+    `<span class="muted">${escapeHtml(state.activeViewName || "Library")}</span>`
+  );
   elApp.innerHTML = `<div class="panel"><div class="pad muted">Loading items…</div></div>`;
   state.viewPaging.searchTerm = elQ.value.trim();
 
   await resetAndLoadFirstPage(viewId, indicator);
   buildViewShell(elApp);
-  renderViewGrid(state.activeViewName);
+  renderViewGrid(state.activeViewName, true);
   ensureSentinel(viewId, indicator);
 
   saveCurrentViewState();
@@ -184,6 +202,7 @@ export async function renderView({ viewId, elApp, elNav, elQ, setLoadIndicator }
 
 export async function renderHome(elApp) {
   elApp.innerHTML = `<div class="panel"><div class="pad muted">Select a library.</div></div>`;
+  clearBreadcrumbs();
 }
 
 export async function renderItem({ itemId, elApp, setLoadIndicator }) {
@@ -194,11 +213,65 @@ export async function renderItem({ itemId, elApp, setLoadIndicator }) {
   elApp.innerHTML = `<div class="panel"><div class="pad muted">Loading item…</div></div>`;
   const item = await getItem(itemId);
 
-  const posterRealUrl = imgUrl(item.Id, "Primary", { maxHeight: 720 });
-  const heroRealUrl = imgUrl(item.Id, "Backdrop", { maxWidth: 1280, maxHeight: 0 });
+  const params = getRouteParams();
+  const seriesIdFromRoute = params.get("seriesId") || "";
+  const seasonIdFromRoute = params.get("seasonId") || "";
+  const boxSetIdFromRoute = params.get("boxSetId") || "";
+
+  // --- Breadcrumbs: Library → Series → Season → Episode / Library → BoxSet → Movie ---
+  let crumbsHtml = state.activeViewId
+    ? `<a class="a muted" href="#/view/${escapeHtml(state.activeViewId)}">${escapeHtml(state.activeViewName || "Library")}</a>`
+    : `<span class="muted">${escapeHtml(state.activeViewName || "Library")}</span>`;
+
+  // TV path
+  if ((item.Type === "Season" || item.Type === "Episode") && seriesIdFromRoute) {
+    const series = await getItem(seriesIdFromRoute);
+    crumbsHtml += ` <span class="muted"> → </span> <a class="a muted" href="#/item/${escapeHtml(series.Id)}">${escapeHtml(series.Name || "Series")}</a>`;
+  }
+
+  if (item.Type === "Episode") {
+    const seasonId = seasonIdFromRoute || item.ParentId || "";
+    if (seasonId) {
+      const season = await getItem(seasonId);
+      crumbsHtml += ` <span class="muted"> → </span> <a class="a muted" href="#/item/${escapeHtml(season.Id)}?seriesId=${encodeURIComponent(seriesIdFromRoute)}">${escapeHtml(season.Name || "Season")}</a>`;
+    }
+    crumbsHtml += ` <span class="muted"> → </span> ${escapeHtml(item.Name || "")}`;
+
+  // Collections path
+  } else if (item.Type === "Movie" && boxSetIdFromRoute) {
+    const bs = await getItem(boxSetIdFromRoute);
+    crumbsHtml += ` <span class="muted"> → </span> <a class="a muted" href="#/item/${escapeHtml(bs.Id)}">${escapeHtml(bs.Name || "Collection")}</a>`;
+    crumbsHtml += ` <span class="muted"> → </span> ${escapeHtml(item.Name || "")}`;
+
+  // Default
+  } else {
+    crumbsHtml += ` <span class="muted"> → </span> ${escapeHtml(item.Name || "")}`;
+  }
+  setBreadcrumbs(crumbsHtml);
+
+  // --- Image selection: prefer Backdrop for Series/BoxSet header; fallback when missing ---
+  const preferBackdropHeader = (item.Type === "Series" || item.Type === "BoxSet");
+
+  const heroType = preferBackdropHeader
+    ? (hasBackdrop(item) ? "Backdrop" : "Primary")
+    : (hasBackdrop(item) ? "Backdrop" : "Primary");
+
+  const posterType = hasPrimary(item)
+    ? "Primary"
+    : (hasBackdrop(item) ? "Backdrop" : "Primary");
+
+  const heroRealUrl =
+    heroType === "Backdrop"
+      ? imgUrl(item.Id, "Backdrop", { maxWidth: 1280, maxHeight: 0 })
+      : imgUrl(item.Id, "Primary", { maxWidth: 1280, maxHeight: 0 });
+
+  const posterRealUrl =
+    posterType === "Backdrop"
+      ? imgUrl(item.Id, "Backdrop", { maxWidth: 720, maxHeight: 0 })
+      : imgUrl(item.Id, "Primary", { maxHeight: 720 });
 
   const posterHtml = renderImgWithBlurhash(item, {
-    imageType: "Primary",
+    imageType: posterType,
     url: posterRealUrl,
     alt: item.Name || "",
     wrapStyle: "width:100%;aspect-ratio:2/3;overflow:hidden;background:#0e1522;",
@@ -209,7 +282,7 @@ export async function renderItem({ itemId, elApp, setLoadIndicator }) {
   });
 
   const heroHtml = renderImgWithBlurhash(item, {
-    imageType: "Backdrop",
+    imageType: heroType,
     url: heroRealUrl,
     alt: "",
     wrapStyle: "width:100%;aspect-ratio:16/9;overflow:hidden;background:#0e1522;",
@@ -261,7 +334,7 @@ export async function renderItem({ itemId, elApp, setLoadIndicator }) {
               });
 
               return `
-                <a class="railItem" href="#/item/${k.Id}">
+                <a class="railItem" href="#/item/${k.Id}?boxSetId=${encodeURIComponent(item.Id)}">
                   <div class="railPoster">${poster}</div>
                   <div class="railName" title="${escapeHtml(k.Name||"")}">${escapeHtml(trunc(k.Name||"", 18))}</div>
                   ${k.ProductionYear ? `<div class="railYear">${escapeHtml(k.ProductionYear)}</div>` : `<div class="railYear">&nbsp;</div>`}
@@ -308,13 +381,8 @@ export async function renderItem({ itemId, elApp, setLoadIndicator }) {
       </div>
     `;
   } else if (item.Type === "Season") {
-    const h = location.hash.replace(/^#/,"");
-    const qs = h.includes("?") ? h.split("?")[1] : "";
-    const params = new URLSearchParams(qs);
-    const seriesId = params.get("seriesId") || "";
-
-    if (seriesId) {
-      const eps = await getSeasonEpisodes(seriesId, item.Id);
+    if (seriesIdFromRoute) {
+      const eps = await getSeasonEpisodes(seriesIdFromRoute, item.Id);
       childrenHtml = `
         <div class="panel">
           ${heroHtml}
@@ -322,7 +390,7 @@ export async function renderItem({ itemId, elApp, setLoadIndicator }) {
             <h3 style="margin:0 0 10px;">Episodes</h3>
             <div class="list">
               ${eps.map(e => `
-                <a class="a itemRow" href="#/item/${e.Id}">
+                <a class="a itemRow" href="#/item/${e.Id}?seriesId=${encodeURIComponent(seriesIdFromRoute)}&seasonId=${encodeURIComponent(item.Id)}">
                   ${renderImgWithBlurhash(e, {
                     imageType: "Primary",
                     url: imgUrl(e.Id, "Primary", { maxHeight: 160 }),
@@ -350,11 +418,7 @@ export async function renderItem({ itemId, elApp, setLoadIndicator }) {
   }
 
   elApp.innerHTML = `
-    <div class="crumbs">
-      <a class="a muted" href="#/view/${escapeHtml(state.activeViewId)}">${escapeHtml(state.activeViewName || "Library")}</a>
-      <span class="muted"> • </span>
-      ${escapeHtml(item.Name || "")}
-    </div>
+    
 
     <div class="detail">
       <div class="panel">

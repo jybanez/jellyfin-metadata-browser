@@ -177,11 +177,13 @@ export async function getItem(itemId) {
   const key = `item:${itemId}`;
   if (state.cache.has(key)) return state.cache.get(key);
 
+  // Added ImageTags + BackdropImageTags so we can detect missing Primary/Backdrop and choose fallbacks.
   const fields = [
     "PrimaryImageAspectRatio","Overview","Genres","CommunityRating","CriticRating",
     "OfficialRating","PremiereDate","ProductionYear","RunTimeTicks","People",
     "Studios","Taglines","Tags","ProviderIds","RemoteTrailers","LocalTrailerCount",
-    "ImageBlurHashes"
+    "ImageBlurHashes",
+    "ImageTags","BackdropImageTags"
   ].join(",");
 
   const data = await jfFetch(`/Users/${state.userId}/Items/${encodeURIComponent(itemId)}?Fields=${encodeURIComponent(fields)}`);

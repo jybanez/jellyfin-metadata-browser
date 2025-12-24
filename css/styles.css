@@ -95,3 +95,4 @@ main .wrap{ padding-top:18px; padding-bottom:40px; }
 }
 .railName{ margin-top: 10px; font-size: 13px; font-weight: 600; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .railYear{ margin-top: 4px; font-size: 12px; color: var(--muted); }
+

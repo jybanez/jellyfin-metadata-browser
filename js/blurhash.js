@@ -1,4 +1,5 @@
 import { escapeHtml } from "./utils.js";
+import { isImageLoaded, markImageLoaded } from "./imageCache.js";
 
 const _blurhashChars = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz#$%*+,-.:;=?@[]^_{|}~";
 const _blurhashDecodeMap = (() => {
@@ -108,17 +109,35 @@ export function renderImgWithBlurhash(item, {
   imgClass = "",
   imgStyle = "",
 } = {}) {
+  const safeAlt = escapeHtml(alt);
+
+  // If we've already loaded this exact URL before, skip blurhash placeholder.
+  if (isImageLoaded(url)) {
+    return `
+      <span style="position:relative;display:block;${wrapStyle}">
+        <img class="${imgClass} loaded" src="${url}" alt="${safeAlt}" loading="lazy"
+             style="position:relative;${imgStyle}">
+      </span>
+    `;
+  }
+
   const bh = getJellyfinBlurHash(item, imageType);
   const blur = bh ? blurhashToDataURL(bh, blurW, blurH, 1) : "";
-  const safeAlt = escapeHtml(alt);
+
+  // Mark as loaded when the real image finishes.
+  const onLoad = `
+    this.classList.add('loaded');
+    try { window.__jmMarkImageLoaded && window.__jmMarkImageLoaded(this.currentSrc || this.src); } catch(e) {}
+  `.trim();
 
   return `
     <span style="position:relative;display:block;${wrapStyle}">
       ${blur ? `<img src="${blur}" alt="" aria-hidden="true"
                 style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;filter:blur(12px);transform:scale(1.08);">` : ``}
       <img class="${imgClass}" src="${url}" alt="${safeAlt}" loading="lazy"
-           onload="this.classList.add('loaded')"
+           onload="${escapeHtml(onLoad)}"
            style="position:relative;${imgStyle}">
     </span>
   `;
 }
+
