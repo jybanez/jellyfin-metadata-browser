@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Jellyfin Metadata Browser</title>
+  <link rel="stylesheet" href="./css/styles.css">
+</head>
+<body>
+<header>
+  <div class="wrap row">
+    <div class="brand">Jellyfin Metadata Browser</div>
+    <nav id="nav"></nav>
+    <div class="search">
+      <input id="q" type="search" placeholder="Search this library…" />
+      <button id="btnRefresh" title="Refresh libraries">Refresh</button>
+    </div>
+  </div>
+</header>
+
+<main>
+  <div class="wrap">
+    <div id="status" class="crumbs"></div>
+    <div id="app"></div>
+  </div>
+</main>
+
+<div id="loadIndicator"><span class="spinner"></span><span id="loadIndicatorText">Loading…</span></div>
+
+<script type="module" src="./js/main.js"></script>
+</body>
+</html>
