@@ -12,7 +12,8 @@ const btnRefresh = document.getElementById("btnRefresh");
 
 function setStatus(text){ elStatus.textContent = text || ""; }
 
-function showIndicator(show, text="Loading…") {
+// Renamed to avoid accidental name mismatches.
+function setLoadIndicator(show, text="Loading…") {
   const el = document.getElementById("loadIndicator");
   const t = document.getElementById("loadIndicatorText");
   if (!el || !t) return;
@@ -31,9 +32,9 @@ function navLink(view) {
 async function route() {
   const r = parseHash();
   if (r.page === "view" && r.viewId) {
-    await renderView({ viewId: r.viewId, elApp, elNav, elQ, showIndicator });
+    await renderView({ viewId: r.viewId, elApp, elNav, elQ, setLoadIndicator });
   } else if (r.page === "item" && r.itemId) {
-    await renderItem({ itemId: r.itemId, elApp, showIndicator });
+    await renderItem({ itemId: r.itemId, elApp, setLoadIndicator });
   } else {
     await renderHome(elApp);
   }
@@ -44,12 +45,14 @@ function installSearch() {
   elQ.addEventListener("input", () => {
     const r = parseHash();
     if (r.page !== "view" || !r.viewId) return;
+
     const term = elQ.value.trim();
     clearTimeout(searchDebounce);
     searchDebounce = setTimeout(async () => {
       if (state.viewPaging.searchTerm === term) return;
       state.viewPaging.searchTerm = term;
-      await renderView({ viewId: r.viewId, elApp, elNav, elQ, showIndicator });
+
+      await renderView({ viewId: r.viewId, elApp, elNav, elQ, setLoadIndicator });
       saveCurrentViewState();
     }, 300);
   });

@@ -2,7 +2,10 @@ import { state } from "./state.js";
 import { PAGE_SIZE } from "./config.js";
 import { escapeHtml, fmtRuntime, pills, trunc, getSeasonBadgeCount } from "./utils.js";
 import { renderImgWithBlurhash } from "./blurhash.js";
-import { imgUrl, fetchItemsInViewPage, getItem, getBoxSetChildren, getSeriesSeasons, getSeasonEpisodes } from "./api.js";
+import {
+  imgUrl, fetchItemsInViewPage, getItem,
+  getBoxSetChildren, getSeriesSeasons, getSeasonEpisodes
+} from "./api.js";
 import { saveCurrentViewState, restoreViewState } from "./storage.js";
 
 export function buildViewShell(elApp) {
@@ -14,7 +17,7 @@ export function buildViewShell(elApp) {
   `;
 }
 
-export async function resetAndLoadFirstPage(viewId) {
+export async function resetAndLoadFirstPage(viewId, setLoadIndicator) {
   state.viewPaging.items = [];
   state.viewPaging.startIndex = 0;
   state.viewPaging.total = 0;
@@ -27,14 +30,15 @@ export async function resetAndLoadFirstPage(viewId) {
   }
   state.viewPaging.sentinelAttached = false;
 
-  await loadNextPage(viewId, true);
+  await loadNextPage(viewId, setLoadIndicator, true);
 }
 
-export async function loadNextPage(viewId, showIndicator, isFirst=false) {
+export async function loadNextPage(viewId, setLoadIndicator, isFirst=false) {
   if (state.viewPaging.loading || state.viewPaging.done) return;
   state.viewPaging.loading = true;
 
-  if (!isFirst) showIndicator(true, "Loading more…");
+  const indicator = typeof setLoadIndicator === "function" ? setLoadIndicator : () => {};
+  if (!isFirst) indicator(true, "Loading more…");
 
   try {
     const { items, total } = await fetchItemsInViewPage(
@@ -53,7 +57,7 @@ export async function loadNextPage(viewId, showIndicator, isFirst=false) {
     }
   } finally {
     state.viewPaging.loading = false;
-    if (!isFirst) showIndicator(false);
+    if (!isFirst) indicator(false);
   }
 }
 
@@ -110,17 +114,19 @@ export function renderViewGrid(activeViewName) {
   else loadingMore.textContent = "";
 }
 
-export function ensureSentinel(viewId, showIndicator) {
+export function ensureSentinel(viewId, setLoadIndicator) {
   if (state.viewPaging.sentinelAttached) return;
 
   const sentinel = document.getElementById("sentinel");
   if (!sentinel) return;
 
+  const indicator = typeof setLoadIndicator === "function" ? setLoadIndicator : () => {};
+
   const io = new IntersectionObserver(async (entries) => {
     const hit = entries.some(e => e.isIntersecting);
     if (!hit) return;
 
-    await loadNextPage(viewId, showIndicator, false);
+    await loadNextPage(viewId, indicator, false);
     renderViewGrid(state.activeViewName);
     saveCurrentViewState();
   }, { root: null, threshold: 0.1 });
@@ -130,16 +136,18 @@ export function ensureSentinel(viewId, showIndicator) {
   state.viewPaging.sentinelAttached = true;
 }
 
-export function reattachSentinel(viewId, showIndicator) {
+export function reattachSentinel(viewId, setLoadIndicator) {
   if (state.viewPaging.observer) {
     state.viewPaging.observer.disconnect();
     state.viewPaging.observer = null;
   }
   state.viewPaging.sentinelAttached = false;
-  ensureSentinel(viewId, showIndicator);
+  ensureSentinel(viewId, setLoadIndicator);
 }
 
-export async function renderView({ viewId, elApp, elNav, elQ, showIndicator }) {
+export async function renderView({ viewId, elApp, elNav, elQ, setLoadIndicator }) {
+  const indicator = typeof setLoadIndicator === "function" ? setLoadIndicator : () => {};
+
   state.activeViewId = viewId;
   const view = state.views.find(v => v.Id === viewId);
   state.activeViewName = view?.Name || "Library";
@@ -148,12 +156,12 @@ export async function renderView({ viewId, elApp, elNav, elQ, showIndicator }) {
     a.classList.toggle("active", a.getAttribute("href") === `#/view/${viewId}`)
   );
 
-  // Restore if available
+  // Try restore
   const restored = await restoreViewState(viewId, {
     buildViewShell: () => buildViewShell(elApp),
     renderViewGrid: () => renderViewGrid(state.activeViewName),
-    reattachSentinel: (id) => reattachSentinel(id, showIndicator),
-    setLoadIndicator: showIndicator
+    reattachSentinel: (id) => reattachSentinel(id, indicator),
+    setLoadIndicator: indicator
   });
 
   if (restored?.ok) {
@@ -166,10 +174,10 @@ export async function renderView({ viewId, elApp, elNav, elQ, showIndicator }) {
   elApp.innerHTML = `<div class="panel"><div class="pad muted">Loading items…</div></div>`;
   state.viewPaging.searchTerm = elQ.value.trim();
 
-  await resetAndLoadFirstPage(viewId);
+  await resetAndLoadFirstPage(viewId, indicator);
   buildViewShell(elApp);
   renderViewGrid(state.activeViewName);
-  ensureSentinel(viewId, showIndicator);
+  ensureSentinel(viewId, indicator);
 
   saveCurrentViewState();
 }
@@ -178,9 +186,10 @@ export async function renderHome(elApp) {
   elApp.innerHTML = `<div class="panel"><div class="pad muted">Select a library.</div></div>`;
 }
 
-export async function renderItem({ itemId, elApp, showIndicator }) {
+export async function renderItem({ itemId, elApp, setLoadIndicator }) {
+  const indicator = typeof setLoadIndicator === "function" ? setLoadIndicator : () => {};
   saveCurrentViewState();
-  showIndicator(false);
+  indicator(false);
 
   elApp.innerHTML = `<div class="panel"><div class="pad muted">Loading item…</div></div>`;
   const item = await getItem(itemId);
@@ -299,8 +308,8 @@ export async function renderItem({ itemId, elApp, showIndicator }) {
       </div>
     `;
   } else if (item.Type === "Season") {
-    const route = window.location.hash.replace(/^#/,"");
-    const qs = route.includes("?") ? route.split("?")[1] : "";
+    const h = location.hash.replace(/^#/,"");
+    const qs = h.includes("?") ? h.split("?")[1] : "";
     const params = new URLSearchParams(qs);
     const seriesId = params.get("seriesId") || "";
 
