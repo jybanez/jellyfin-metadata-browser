@@ -227,10 +227,25 @@ export async function getSeriesSeasons(seriesId) {
 }
 
 export async function getSeasonEpisodes(seriesId, seasonId) {
-  const key = `season:${seasonId}:episodes`;
+  // bump cache key version so old cached (no-Overview) data doesn't get reused
+  const key = `season:${seasonId}:episodes:v2`;
   if (state.cache.has(key)) return state.cache.get(key);
 
-  const fields = ["PrimaryImageAspectRatio","RunTimeTicks","ImageBlurHashes"].join(",");
+  // Optional: delete older cached versions if they exist
+  state.cache.delete(`season:${seasonId}:episodes`);
+
+  const fields = [
+    "PrimaryImageAspectRatio",
+    "Overview",
+    "RunTimeTicks",
+    "ImageBlurHashes",
+    "IndexNumber",
+    "ParentId",
+    // These two are needed because views.js checks them to choose Primary vs Backdrop
+    "ImageTags",
+    "BackdropImageTags"
+  ].join(",");
+
   const data = await jfFetch(
     `/Shows/${encodeURIComponent(seriesId)}/Episodes` +
     `?UserId=${encodeURIComponent(state.userId)}` +
@@ -243,3 +258,5 @@ export async function getSeasonEpisodes(seriesId, seasonId) {
   state.cache.set(key, items);
   return items;
 }
+
+
