@@ -116,28 +116,42 @@ export function renderImgWithBlurhash(item, {
     return `
       <span style="position:relative;display:block;${wrapStyle}">
         <img class="${imgClass} loaded" src="${url}" alt="${safeAlt}" loading="lazy"
-             style="position:relative;${imgStyle}">
+             style="position:relative;z-index:1;${imgStyle}">
       </span>
     `;
   }
 
-  const bh = getJellyfinBlurHash(item, imageType);
+  // Recommended: don't show blur placeholder behind transparent logos.
+  const disableBlur = imageType === "Logo";
+
+  const bh = !disableBlur ? getJellyfinBlurHash(item, imageType) : null;
   const blur = bh ? blurhashToDataURL(bh, blurW, blurH, 1) : "";
 
-  // Mark as loaded when the real image finishes.
+  // Mark as loaded + fade blur out when the real image finishes.
   const onLoad = `
     this.classList.add('loaded');
     try { window.__jmMarkImageLoaded && window.__jmMarkImageLoaded(this.currentSrc || this.src); } catch(e) {}
+    try {
+      const wrap = this.parentElement;
+      const blurImg = wrap && wrap.querySelector(':scope > img[data-bh="1"]');
+      if (blurImg) blurImg.style.opacity = '0';
+    } catch(e) {}
   `.trim();
 
   return `
     <span style="position:relative;display:block;${wrapStyle}">
-      ${blur ? `<img src="${blur}" alt="" aria-hidden="true"
-                style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;filter:blur(12px);transform:scale(1.08);">` : ``}
+      ${blur ? `<img data-bh="1" src="${blur}" alt="" aria-hidden="true"
+                style="position:absolute;inset:0;width:100%;height:100%;
+                       object-fit:${disableBlur ? "contain" : "cover"};
+                       filter:${disableBlur ? "none" : "blur(12px)"};
+                       transform:${disableBlur ? "none" : "scale(1.08)"};
+                       opacity:1;transition:opacity 220ms ease;
+                       z-index:0;pointer-events:none;">` : ``}
       <img class="${imgClass}" src="${url}" alt="${safeAlt}" loading="lazy"
            onload="${escapeHtml(onLoad)}"
-           style="position:relative;${imgStyle}">
+           style="position:relative;z-index:1;${imgStyle}">
     </span>
   `;
 }
+
 

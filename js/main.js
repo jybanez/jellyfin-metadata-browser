@@ -4,6 +4,14 @@ import { parseHash, installRouteSaver } from "./router.js";
 import { renderHome, renderView, renderItem } from "./views.js";
 import { saveCurrentViewState, clearViewState } from "./storage.js";
 import { markImageLoaded } from "./imageCache.js";
+import { initNavKeys } from "./navkeys.js";
+
+if (document.readyState === "loading") {
+  window.addEventListener("DOMContentLoaded", () => initNavKeys(), { once: true });
+} else {
+  initNavKeys();
+}
+
 
 
 window.__jmMarkImageLoaded = markImageLoaded;
@@ -30,9 +38,14 @@ function navLink(view) {
   const a = document.createElement("a");
   a.href = `#/view/${view.Id}`;
   a.textContent = view.Name;
+
+  a.dataset.k = "nav";        // 🔑 identify as nav item
+  a.tabIndex = 0;             // ensure focusable (safe)
+
   if (view.Id === state.activeViewId) a.classList.add("active");
   return a;
 }
+
 
 async function route() {
   const r = parseHash();
@@ -111,7 +124,8 @@ elNav.addEventListener("click", () => {
   if (r.page === "view") saveCurrentViewState();
 });
 
-window.addEventListener("hashchange", () => route());
+window.addEventListener("hashchange", route);
+window.addEventListener("popstate", route);
 
 installRouteSaver();
 installSearch();

@@ -1,4 +1,33 @@
 :root { --bg:#0b0f14; --card:#111826; --muted:#9aa4b2; --text:#e6edf3; --accent:#4f9cf7; }
+[data-theme="midnight"] {
+  --bg:#0a0e14;
+  --card:#121a2a;
+  --muted:#9aa4b2;
+  --text:#e6edf3;
+  --accent:#5aa2ff;
+}
+[data-theme="cinema"] {
+  --bg:#080606;
+  --card:#141010;
+  --muted:#b8b0a8;
+  --text:#f2ede7;
+  --accent:#d4a24c;
+}
+[data-theme="slate"] {
+  --bg:#f4f6fa;
+  --card:#ffffff;
+  --muted:#6b7280;
+  --text:#0f172a;
+  --accent:#2563eb;
+}
+[data-theme="oled"] {
+  --bg:#000000;
+  --card:#0a0a0a;
+  --muted:#8b8b8b;
+  --text:#f5f5f5;
+  --accent:#4f9cf7;
+}
+
 *{ box-sizing:border-box; }
 body{ margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif; background:var(--bg); color:var(--text); }
 header{ position:sticky; top:0; z-index:10; backdrop-filter: blur(10px); background:rgba(11,15,20,.85); border-bottom:1px solid rgba(255,255,255,.06); }
@@ -166,4 +195,174 @@ header > .wrap + .wrap {
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+
+/* TV / kiosk mode: use nearly full width */
+[data-layout="tv"] .wrap{
+  max-width: 96vw;
+}
+[data-layout="tv"] .grid{
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 20px;
+}
+
+
+/* Jellyfin-style detail header with backdrop behind content */
+.detailHero {
+  position: relative;
+  border-radius: 16px;
+  overflow: hidden;
+  border: 1px solid rgba(255,255,255,.08);
+  background: #0e1522;
+  margin-bottom: 16px;
+}
+
+/* Backdrop layer */
+.detailHero .heroBg {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+}
+
+/* Make the backdrop “feel like” Jellyfin */
+.detailHero .heroBg::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(1200px 500px at 30% 30%, rgba(0,0,0,.35), rgba(0,0,0,.8) 70%),
+    linear-gradient(to bottom, rgba(0,0,0,.35), rgba(0,0,0,.92));
+  z-index: 2;
+}
+
+/* Force backdrop image to cover the header */
+.detailHero .heroBg img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* Content sits on top */
+.detailHero .heroContent {
+  position: relative;
+  z-index: 3;
+  padding: 18px;
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  gap: 18px;
+  align-items: top;
+}
+
+@media (max-width: 900px){
+  .detailHero .heroContent {
+    grid-template-columns: 140px 1fr;
+    align-items: start;
+  }
+}
+
+.detailHero .heroPoster {
+  border-radius: 14px;
+  overflow: hidden;
+  border: 1px solid rgba(255,255,255,.10);
+  background: rgba(14,21,34,.85);
+  box-shadow: 0 18px 40px rgba(0,0,0,.45);
+}
+
+.detailHero .heroText h2 {
+  margin: 0 0 8px;
+  font-size: 28px;
+  line-height: 1.1;
+}
+
+.detailHero .heroText .tagline {
+  color: var(--muted);
+  margin: 0 0 10px;
+}
+
+.detailHero .heroText .overview {
+  line-height: 1.5;
+  max-width: 1100px;
+}
+
+.detailHero .heroMeta {
+  margin-top: 12px;
+  display: grid;
+  grid-template-columns: 160px 1fr;
+  gap: 8px 14px;
+}
+
+@media (max-width: 520px){
+  .detailHero .heroMeta { grid-template-columns: 120px 1fr; }
+}
+
+
+/* Centered logo overlay inside the detail hero */
+
+.heroText .heroLogo {
+  max-height: 140px;
+  margin: 2.5em;
+}
+
+.heroText .heroLogo img {
+  max-height: 140px;
+  width: auto;
+  margin-bottom:1em;
+}
+
+/* Blurhash layering: blur behind, real image on top */
+.bhWrap { position: relative; display: block; }
+.bhBlur {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  filter: blur(14px);
+  transform: scale(1.08);
+  opacity: 1;
+  transition: opacity 220ms ease;
+  z-index: 0;
+  pointer-events: none;
+}
+.bhReal {
+  position: relative;
+  z-index: 1;
+  opacity: 0;
+  transition: opacity 220ms ease;
+}
+.bhReal.loaded { opacity: 1; }
+.bhWrap.ready .bhBlur { opacity: 0; }
+
+/* Strong focus ring for TV */
+.kfocus:focus {
+  outline: 3px solid rgba(79,156,247,.95);
+  outline-offset: 3px;
+  border-radius: 14px;
+}
+
+/* Make focused card pop a bit */
+.kfocus:focus .meta {
+  background: rgba(79,156,247,.10);
+}
+.card:focus {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(79,156,247,.9);
+  transform: scale(1.04);
+  z-index: 2;
+}
+
+.card:focus-visible,
+.railItem:focus-visible,
+.seasonCard:focus-visible,
+.episodeRow:focus-visible {
+  outline: none;
+  border: 3px solid rgba(79,156,247,.95);
+  border-radius:14px;
+  transform: scale(1.06);
+  box-shadow: 0 10px 30px rgba(0,0,0,.6);
+  z-index: 2;
+}
+.railItem:focus-visible,
+.episodeRow:focus-visible {
+  transform: scale(1.005);
 }
