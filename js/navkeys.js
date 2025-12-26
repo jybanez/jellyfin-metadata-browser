@@ -12,6 +12,18 @@ const UP_KEYS    = new Set(["ArrowUp",    "Up"]);
 const DOWN_KEYS  = new Set(["ArrowDown",  "Down"]);
 
 /* ===============================
+   Quick Jump config/state
+================================ */
+const QJ_RESET_MS = 700;   // idle time to reset buffer
+const QJ_SHOW_MS  = 650;   // overlay show time
+const QJ_MAX_LEN  = 32;
+
+let _qjBuf = "";
+let _qjLastAt = 0;
+let _qjHideTimer = null;
+let _qjExecTimer = null;
+
+/* ===============================
    Utilities
 ================================ */
 function ensureNavState() {
@@ -35,6 +47,188 @@ function getRoute() {
   if (parts[0] === "view") return { page: "view", viewId: parts[1] || "" };
   if (parts[0] === "item") return { page: "item", itemId: parts[1] || "" };
   return { page: "home" };
+}
+
+/* ===============================
+   Quick Jump helpers
+================================ */
+function isQuickJumpChar(e) {
+  // only plain alphanumerics; ignore modifiers
+  if (e.ctrlKey || e.altKey || e.metaKey) return false;
+  if (typeof e.key !== "string") return false;
+  if (e.key.length !== 1) return false;
+  return /^[a-zA-Z0-9]$/.test(e.key);
+}
+
+function qjOverlayEl() {
+  let el = document.getElementById("jmQuickJump");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "jmQuickJump";
+    el.style.cssText = [
+      "position:fixed",
+      "left:50%",
+      "top:92px",
+      "transform:translateX(-50%)",
+      "padding:10px 14px",
+      //"border-radius:999px",
+      //"background:rgba(14,21,34,.92)",
+      //"border:1px solid rgba(255,255,255,.14)",
+      //"color:#e6edf3",
+      //"font:600 14px system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif",
+      "z-index:99999",
+      "backdrop-filter:blur(10px)",
+      "display:none",
+      "max-width:min(520px, 90vw)",
+      "white-space:nowrap",
+      "overflow:hidden",
+      "text-overflow:ellipsis",
+      "pointer-events:none",
+    ].join(";");
+    document.body.appendChild(el);
+  }
+  return el;
+}
+
+function showQuickJumpOverlay(text) {
+  const el = qjOverlayEl();
+  el.textContent = text;
+  el.style.display = "block";
+
+  clearTimeout(_qjHideTimer);
+  _qjHideTimer = setTimeout(() => {
+    el.style.display = "none";
+  }, QJ_SHOW_MS);
+}
+
+function resetQuickJumpBufferIfIdle() {
+  const now = Date.now();
+  if (now - _qjLastAt > QJ_RESET_MS) _qjBuf = "";
+  _qjLastAt = now;
+}
+
+function appendQuickJumpChar(ch) {
+  resetQuickJumpBufferIfIdle();
+  _qjBuf = (_qjBuf + ch).slice(0, QJ_MAX_LEN);
+  showQuickJumpOverlay(_qjBuf.toUpperCase());
+  return _qjBuf;
+}
+
+function normalizeName(s) {
+  return (s || "").trim().toLowerCase();
+}
+
+function getElName(el) {
+  if (!el) return "";
+  // Best practice: set data-name in your templates (optional, but most accurate)
+  const dn = el.getAttribute("data-name") || el.getAttribute("data-title") || el.getAttribute("aria-label");
+  if (dn) return dn;
+
+  // Try common inner title nodes
+  const t =
+    el.querySelector?.(".title")?.textContent ||
+    el.querySelector?.(".seasonLabel")?.textContent ||
+    el.querySelector?.(".railName")?.textContent ||
+    el.querySelector?.(".episodeTitle")?.textContent;
+
+  if (t) return t;
+
+  // Fallback: first line of textContent
+  const raw = (el.textContent || "").split("\n")[0];
+  return raw || "";
+}
+
+function findMatchIndex(els, prefix, startIdx) {
+  const p = normalizeName(prefix);
+  if (!p) return -1;
+
+  const n = els.length;
+  if (!n) return -1;
+
+  const start = Math.max(0, Math.min(startIdx || 0, n - 1));
+
+  // forward search then wrap
+  for (let i = start; i < n; i++) {
+    if (normalizeName(getElName(els[i])).startsWith(p)) return i;
+  }
+  for (let i = 0; i < start; i++) {
+    if (normalizeName(getElName(els[i])).startsWith(p)) return i;
+  }
+  return -1;
+}
+
+/**
+ * Determine the current "jump scope":
+ * - If nav focused: nav links
+ * - Else if focused within a zone (season/ep/rail/card): that zone
+ * - Else: based on route (view -> grid; item -> season/ep/rail priority)
+ */
+function getQuickJumpScope(r) {
+  // If nav is focused, scope = nav
+  const nav = getFocusedNav();
+  if (nav) {
+    const links = getNavLinks();
+    return { scope: "nav", els: links, getIndex: () => links.indexOf(nav), focusAt: (i) => focusNav(i) };
+  }
+
+  // If focused inside one of our zones, scope that zone
+  const seasonEl = getZoneEl("season");
+  if (seasonEl) {
+    const els = getZoneEls("season");
+    return { scope: "season", els, getIndex: () => Number(seasonEl.dataset.idx) || 0, focusAt: (i) => focusZone("season", i, r.itemId) };
+  }
+
+  const epEl = getZoneEl("ep");
+  if (epEl) {
+    const els = getZoneEls("ep");
+    return { scope: "ep", els, getIndex: () => Number(epEl.dataset.idx) || 0, focusAt: (i) => focusZone("ep", i, r.itemId) };
+  }
+
+  const railEl = getZoneEl("rail");
+  if (railEl) {
+    const els = getZoneEls("rail");
+    return { scope: "rail", els, getIndex: () => Number(railEl.dataset.idx) || 0, focusAt: (i) => focusZone("rail", i, r.itemId) };
+  }
+
+  const focusedCard = getFocusedGridEl();
+  if (focusedCard && r.page === "view") {
+    const els = getGridEls();
+    return { scope: "grid", els, getIndex: () => Number(focusedCard.dataset.idx) || 0, focusAt: (i) => focusGrid(i, r.viewId) };
+  }
+
+  // No focused element: route-based
+  if (r.page === "item" && r.itemId) {
+    const seasonEls = getZoneEls("season");
+    if (seasonEls.length) return { scope: "season", els: seasonEls, getIndex: () => 0, focusAt: (i) => focusZone("season", i, r.itemId) };
+
+    const epEls = getZoneEls("ep");
+    if (epEls.length) return { scope: "ep", els: epEls, getIndex: () => 0, focusAt: (i) => focusZone("ep", i, r.itemId) };
+
+    const railEls = getZoneEls("rail");
+    if (railEls.length) return { scope: "rail", els: railEls, getIndex: () => 0, focusAt: (i) => focusZone("rail", i, r.itemId) };
+  }
+
+  if (r.page === "view" && r.viewId) {
+    const els = getGridEls();
+    return { scope: "grid", els, getIndex: () => (state.navFocus?.[r.viewId] || 0), focusAt: (i) => focusGrid(i, r.viewId) };
+  }
+
+  // fallback: nav
+  const links = getNavLinks();
+  return { scope: "nav", els: links, getIndex: () => 0, focusAt: (i) => focusNav(i) };
+}
+
+function executeQuickJump(r) {
+  const prefix = _qjBuf;
+  if (!prefix) return;
+
+  const scope = getQuickJumpScope(r);
+  const els = scope.els || [];
+  if (!els.length) return;
+
+  const start = (scope.getIndex?.() ?? 0) + 1; // "next match" behavior
+  const hit = findMatchIndex(els, prefix, start);
+  if (hit >= 0) scope.focusAt(hit);
 }
 
 /* ===============================
@@ -222,6 +416,21 @@ export function initNavKeys() {
       if (isTypingContext(document.activeElement)) return;
 
       const r = getRoute();
+
+      // ---- QUICK JUMP (new) ----
+      if (isQuickJumpChar(e)) {
+        e.preventDefault();
+
+        appendQuickJumpChar(e.key);
+
+        // debounce execution so a burst of typing doesn't do many DOM scans
+        clearTimeout(_qjExecTimer);
+        _qjExecTimer = setTimeout(() => {
+          try { executeQuickJump(r); } catch (_) {}
+        }, 90);
+
+        return;
+      }
 
       // Global Back handling on item pages (even when nothing focusable is focused)
       if (r.page === "item" && BACK_KEYS.has(e.key)) {

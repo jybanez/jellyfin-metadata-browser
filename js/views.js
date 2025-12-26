@@ -118,6 +118,7 @@ function cardHtml(it, idx) {
     <a class="a card"
        data-k="card"
        data-idx="${idx}"
+       data-name="${escapeHtml(it.Name || "")}"
        tabindex="-1"
        href="#/item/${it.Id}">
       ${poster}

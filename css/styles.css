@@ -366,3 +366,10 @@ header > .wrap + .wrap {
 .episodeRow:focus-visible {
   transform: scale(1.005);
 }
+
+#jmQuickJump {
+  font-size: 120px;
+  font-weight: 800;
+  color: white;
+}
+
