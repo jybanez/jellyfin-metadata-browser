@@ -1,9 +1,9 @@
 export const CONFIG = {
-  BASE_URL: "https://media.wizaya.online",
-  API_KEY: "906f805ea8444afa9001156715149885",
+  BASE_URL: "",
+  API_KEY: "",
   USERNAME: "",
   PASSWORD: "",
-  USER_ID: "3d85e2b653b2492babbf2336cde2b834",
+  USER_ID: "",
   CLIENT: {
     name: "JellyMeta",
     device: "Web",

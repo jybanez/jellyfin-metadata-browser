@@ -372,7 +372,8 @@ export function focusInitialInView(viewId) {
       !state.viewPaging.done &&
       typeof window.__jmLoadNextPage === "function"
     ) {
-      window.__jmLoadNextPage();
+      //window.__jmLoadNextPage();
+      if (window.__jmPrefetchNext) window.__jmPrefetchNext();
     }
   });
 }

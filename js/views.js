@@ -11,6 +11,117 @@ import { saveCurrentViewState, restoreViewState } from "./storage.js";
 import { setBreadcrumbs, clearBreadcrumbs } from "./breadcrumbs.js";
 import { setVirtMetrics, focusInitialInView } from "./navkeys.js";
 
+// --- Background prefetch tuning ---
+const PREFETCH_ROWS = 3;            // how close (in rows) before prefetch
+const PREFETCH_MIN_INTERVAL = 1200; // ms between prefetches
+
+let _prefetchTimer = null;
+let _prefetchTimerKind = null; // 'idle' | 'timeout'
+let _lastPrefetchAt = 0;
+
+function getGridEl() {
+  return document.getElementById("grid");
+}
+
+function getGridCols() {
+  const grid = getGridEl();
+  if (!grid) return 1;
+  const cs = getComputedStyle(grid);
+  const cols = cs.gridTemplateColumns
+    ? cs.gridTemplateColumns.split(" ").filter(Boolean).length
+    : 1;
+  return Math.max(1, cols || 1);
+}
+
+function shouldPrefetch() {
+  // Do not prefetch during active server-search
+  if ((state.viewPaging.searchTerm || "").trim()) return false;
+
+  if (state.viewPaging.loading || state.viewPaging.done) return false;
+
+  // If we don't know total, still safe to prefetch once we're close
+  return true;
+}
+
+function isNearEndForPrefetch() {
+  const grid = document.getElementById("grid");
+  if (!grid) return false;
+
+  // Mouse scroll proximity (always consider)
+  const scrollBottom = window.scrollY + window.innerHeight;
+  const docHeight = document.documentElement.scrollHeight;
+  const scrollNearBottom = (docHeight - scrollBottom) < 900; // ~1 screen from bottom
+
+  // Keyboard/focus proximity (if focus is on a grid card)
+  const focused = document.activeElement?.closest?.(".card[data-idx]");
+  let focusNearEnd = false;
+  if (focused) {
+    const rendered = grid.querySelectorAll(".card[data-idx]").length;
+    const cols = getGridCols();
+    const threshold = cols * PREFETCH_ROWS;
+    const idx = Number(focused.dataset.idx) || 0;
+    focusNearEnd = (rendered - 1 - idx) <= threshold;
+  }
+
+  // Important: do NOT let an old focused card block scroll-prefetch.
+  return scrollNearBottom || focusNearEnd;
+}
+
+
+function schedulePrefetch(viewId) {
+  if (!viewId) return;
+  if (!shouldPrefetch()) return;
+  if (!isNearEndForPrefetch()) return;
+
+  const now = Date.now();
+  if (now - _lastPrefetchAt < PREFETCH_MIN_INTERVAL) return;
+  _lastPrefetchAt = now;
+
+  // Cancel any pending scheduled prefetch
+  if (_prefetchTimer != null) {
+    if (_prefetchTimerKind === 'idle' && 'cancelIdleCallback' in window) {
+      try { window.cancelIdleCallback(_prefetchTimer); } catch (_) {}
+    } else {
+      clearTimeout(_prefetchTimer);
+    }
+  }
+  _prefetchTimer = null;
+  _prefetchTimerKind = null;
+
+  const run = async () => {
+    // re-check before executing
+    if (!shouldPrefetch()) return;
+
+    console.log("[prefetch] start", {
+      viewId,
+      startIndex: state.viewPaging.startIndex,
+      loaded: state.viewPaging.items.length,
+      done: state.viewPaging.done
+    });
+
+    // quiet prefetch: no indicator
+    await loadNextPage(viewId, () => {}, false);
+
+    console.log("[prefetch] done", {
+      newStartIndex: state.viewPaging.startIndex,
+      loaded: state.viewPaging.items.length,
+      done: state.viewPaging.done
+    });
+
+
+    // render append if grid exists (so the next down/scroll feels instant)
+    renderViewGrid(state.activeViewName);
+  };
+
+  if ("requestIdleCallback" in window) {
+    _prefetchTimerKind = 'idle';
+    _prefetchTimer = window.requestIdleCallback(() => run(), { timeout: 800 });
+  } else {
+    _prefetchTimerKind = 'timeout';
+    _prefetchTimer = setTimeout(() => run(), 250);
+  }
+}
+
 function hasPrimary(item) {
   return !!(item?.ImageTags && item.ImageTags.Primary);
 }
@@ -164,6 +275,10 @@ export function renderViewGrid(activeViewName, replaceAll = false) {
   if (state.viewPaging.loading) loadingMore.textContent = "Loading more…";
   else if (state.viewPaging.done) loadingMore.textContent = "End of library.";
   else loadingMore.textContent = "";
+
+  // Background prefetch when near the end (mouse or keyboard)
+  if (state.activeViewId) schedulePrefetch(state.activeViewId);
+
 }
 
 export function ensureSentinel(viewId, setLoadIndicator) {
@@ -180,6 +295,7 @@ export function ensureSentinel(viewId, setLoadIndicator) {
 
     await loadNextPage(viewId, indicator, false);
     renderViewGrid(state.activeViewName, false);
+    schedulePrefetch(viewId);
     saveCurrentViewState();
   }, { root: null, threshold: 0.1 });
 
@@ -246,8 +362,20 @@ export async function renderView({ viewId, elApp, elNav, elQ, setLoadIndicator }
 
   await resetAndLoadFirstPage(viewId, indicator);
   buildViewShell(elApp);
+
+  if (!window.__jmPrefetchScrollHooked) {
+    window.__jmPrefetchScrollHooked = true;
+    window.addEventListener("scroll", () => {
+      if (state.activeViewId) schedulePrefetch(state.activeViewId);
+    }, { passive: true });
+  }
+
+
+
   renderViewGrid(state.activeViewName, true);
   ensureSentinel(viewId, indicator);
+
+  window.__jmPrefetchNext = () => schedulePrefetch(viewId);
 
   saveCurrentViewState();
   requestAnimationFrame(() => focusInitialInView(viewId));
@@ -394,6 +522,7 @@ export async function renderItem({ itemId, elApp, setLoadIndicator }) {
                 <a class="railItem"
                    data-k="rail"
                    data-idx="${idxRail}"
+                   data-name="${escapeHtml(k.Name || "")}"
                    tabindex="-1"
                    href="#/item/${k.Id}?boxSetId=${encodeURIComponent(item.Id)}">
                   <div class="railPoster">${poster}</div>
@@ -475,6 +604,7 @@ export async function renderItem({ itemId, elApp, setLoadIndicator }) {
                   <a class="a episodeRow"
                      data-k="ep"
                      data-idx="${idxEp}"
+                     data-name="${escapeHtml(e.Name || "")}"
                      tabindex="-1"
                      href="#/item/${e.Id}?seriesId=${encodeURIComponent(seriesIdFromRoute)}&seasonId=${encodeURIComponent(item.Id)}">
                     <div class="episodeThumb">${thumb}</div>
