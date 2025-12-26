@@ -1,104 +1,70 @@
 # Jellyfin Metadata Browser
 
-A **fast, TV-friendly, read-only web interface** for browsing Jellyfin libraries using the Jellyfin API.  
-This project focuses on **metadata presentation only** — no media playback — making it ideal for kiosks, TVs, dashboards, or external catalog browsing.
+![Version](https://img.shields.io/badge/version-1.0.0-blue)
+![Status](https://img.shields.io/badge/status-stable-brightgreen)
+![License](https://img.shields.io/badge/license-MIT-black)
+![Built%20With](https://img.shields.io/badge/built%20with-vanilla%20JS%20%2B%20HTML%20%2B%20CSS-orange)
 
-**Version:** 1.0.0  
-**Status:** Stable
+A fast, TV-friendly, **read-only** web UI for browsing Jellyfin libraries via the Jellyfin API.  
+This project is focused on **presenting metadata** (movies, shows, seasons, episodes, and collections) with a smooth “10‑foot” experience—**no media playback**.
 
----
-
-## ✨ Features
-
-### 📚 Library Browsing
-- Movies, TV Shows, Box Sets, Seasons, Episodes
-- Dynamic navigation based on Jellyfin libraries
-- Infinite scrolling with **background prefetch** (no loading stalls)
-
-### 🎮 Keyboard & TV-Remote Navigation
-- Full arrow-key navigation (Up / Down / Left / Right)
-- Enter / Select to open items
-- Escape / Back to return
-- Works across:
-  - Main navigation
-  - Library grids
-  - Seasons
-  - Episodes
-  - Collection movie rails
-
-### 🔤 Quick Jump (A–Z / 0–9)
-- Type letters or numbers to instantly jump to titles
-- Works in large libraries (thousands of items)
-- Netflix-style UX
-- Visual overlay feedback
-
-### 🖼️ Image Handling
-- BlurHash placeholders for smooth image loading
-- Automatically skipped for already-loaded images
-- Proper layering (does not interfere with transparent logos)
-- Smart fallback between Logo / Primary / Backdrop
-
-### 🧠 Smart State Handling
-- Preserves scroll position and focus per library
-- Browser Back button supported
-- Keyboard Back / Escape supported
-- No unnecessary reloading
-
-### 📺 TV & Large-Screen Friendly
-- Responsive layouts for widescreen displays
-- Optimized spacing for 10-foot UI
-- Clean, minimal visual design
+**Version:** 1.0.0
 
 ---
 
-## 🚫 What This Is *Not*
+## Highlights
 
-- ❌ No video or audio playback
-- ❌ No user management
-- ❌ No write operations to Jellyfin
-
-This is a **read-only metadata browser** by design.
-
----
-
-## 🛠️ Tech Stack
-
-- Vanilla **HTML / CSS / JavaScript**
-- Jellyfin REST API
-- No frameworks
-- No build step
-- No backend required
-
-Runs entirely in the browser.
+- **Library navigation** generated from your Jellyfin server’s libraries
+- **Movies / TV Shows / Box Sets / Seasons / Episodes** metadata browsing
+- **Infinite scrolling** with **background prefetch** for large libraries
+- **Keyboard / TV-remote navigation** (D‑pad arrows + Enter/Select + Back)
+- **Quick Jump (A–Z / 0–9)** for fast title lookup in large lists
+- **BlurHash image placeholders** for smoother image loading
+- **State preservation** (keeps scroll position and focus when moving between sections)
+- **Responsive layouts** tuned for widescreen monitors/TVs
 
 ---
 
-## Demo Site : https://jybanez.github.io/jellyfin-metadata-browser
+## What this project does not do
 
-## 🚀 Getting Started
+- No video/audio playback
+- No Jellyfin admin features
+- No write operations (read-only by design)
 
-### 1. Clone the repository
+---
+
+## Requirements
+
+- A Jellyfin server (tested with Jellyfin 10.11.x)
+- A Jellyfin API key associated with a user who can access the target libraries
+
+---
+
+## Getting started
+
+### 1) Clone
+
 ```bash
 git clone https://github.com/jybanez/jellyfin-metadata-browser.git
 cd jellyfin-metadata-browser
 ```
 
-### 2. Configure Jellyfin connection
+### 2) Configure your Jellyfin server
 
-Edit your configuration (usually in `config.js` or `index.html`):
+Edit `js/config.js` and set:
 
 ```js
-const CONFIG = {
+export const CONFIG = {
   BASE_URL: "https://your-jellyfin-server",
   API_KEY: "YOUR_API_KEY",
-  USER_ID: "DEFAULT_USER_ID" <optional>
 };
 ```
 
-> 🔑 The API key must belong to a Jellyfin user with access to the desired libraries.
+> The API key should belong to the Jellyfin user whose library views you want to browse.
 
-### 3. Serve the files
-Because this uses ES modules, serve via HTTP:
+### 3) Run locally
+
+Because the app uses ES modules, serve it over HTTP:
 
 ```bash
 # Python
@@ -108,77 +74,65 @@ python -m http.server 8080
 npx serve
 ```
 
-Then open:
+Open:
+
 ```
 http://localhost:8080
 ```
 
 ---
 
-## 📂 Project Structure (Simplified)
+## Project structure
+
+The app is split into a simple static layout plus modular JS:
 
 ```
-/
-├── index.html        # App shell
-├── styles.css        # Themes and layout
-├── main.js           # App bootstrap / router
-├── views.js          # Rendering logic
-├── navkeys.js        # Keyboard & TV navigation
-├── api.js            # Jellyfin API layer
-├── state.js          # Shared application state
-└── utils.js          # Helpers (formatting, blurhash, etc.)
+|-- index.html
+|-- css
+|   |-- styles.css
+|-- js
+|   |-- api.js
+|   |-- blurhash.js
+|   |-- breadcrumbs.js
+|   |-- config.js
+|   |-- imageCache.js
+|   |-- main.js
+|   |-- navkeys.js
+|   |-- router.js
+|   |-- state.js
+|   |-- storage.js
+|   |-- utils.js
+|   |-- views.js
 ```
 
 ---
 
-## 🧪 Tested With
+## Deploy
 
-- Jellyfin 10.9+
-- Chrome / Edge
-- Android TV browser
-- Desktop + keyboard
-- TV remote / D-pad style input
+### GitHub Pages (recommended for a static site)
+1. Push this repo to GitHub
+2. Go to **Settings → Pages**
+3. Set **Source** to the branch you want (e.g., `main`) and `/root`
+4. Save, then open the Pages URL provided by GitHub
 
----
-
-## 📌 Versioning
-
-This project follows **Semantic Versioning**:
-
-- **1.0.0** – First stable public release  
-  - Feature complete
-  - Keyboard/TV navigation solid
-  - Background prefetch implemented
+> If your Jellyfin server is on a different domain, ensure CORS is allowed on your server/proxy configuration.
 
 ---
 
-## 📄 License
+## Tested environments
 
-MIT License  
-You are free to use, modify, and distribute this project.
-
----
-
-## 🙌 Acknowledgements
-
-- Jellyfin Project & Community
-- BlurHash specification
-- Inspiration from modern streaming UIs
+- Desktop: Chrome / Edge
+- TV-style usage: keyboard / D‑pad navigation patterns
+- Jellyfin: 10.11.x
 
 ---
 
-## 💡 Roadmap Ideas
+## License
 
-- Continue Watching / Recently Added rails
-- Alphabet side index (TV-style)
-- Theme switcher
-- IndexedDB metadata cache
-- Artwork color sampling for dynamic theming
+MIT
 
 ---
 
-## 🧑‍💻 Author
+## Author
 
-Created and maintained by **Jonathan Ybanez**
-
-If you find this useful or build something on top of it, a star ⭐ on GitHub is appreciated.
+Jonathan Ybanez
